@@ -1,0 +1,88 @@
+# ClicAgenda nueva app (Fase 0) - stack completo en Docker
+# Uso: docker-compose up -d   (o sin -d para ver logs)
+# Solo infra: docker-compose up -d mysql
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: clicagenda-nueva-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_MASTER_DATABASE:-citas_master}
+      MYSQL_USER: ${MYSQL_USER:-clicagenda}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-clicagenda}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - nueva_mysql_data:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest
+    container_name: clicagenda-phpmyadmin
+    restart: unless-stopped
+    depends_on:
+      mysql: { condition: service_healthy }
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      PMA_USER: ${MYSQL_USER:-clicagenda}
+      PMA_PASSWORD: ${MYSQL_PASSWORD:-clicagenda}
+      UPLOAD_LIMIT: 50M
+    ports:
+      - "${PMA_PORT:-8080}:80"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: clicagenda-nueva-backend
+    restart: unless-stopped
+    depends_on:
+      mysql: { condition: service_healthy }
+    environment:
+      NODE_ENV: development
+      APP_NAME: ${APP_NAME:-ClicAgenda}
+      BACKEND_PORT: 5001
+      DB_MASTER_HOST: mysql
+      DB_MASTER_PORT: 3306
+      DB_MASTER_USER: ${MYSQL_USER:-clicagenda}
+      DB_MASTER_PASSWORD: ${MYSQL_PASSWORD:-clicagenda}
+      DB_MASTER_DATABASE: ${MYSQL_MASTER_DATABASE:-citas_master}
+      DB_INSTANCE_PREFIX: citas_
+      JWT_SECRET: ${JWT_SECRET:-change-me-docker}
+      SUPERADMIN_TOKEN_SECRET: ${SUPERADMIN_TOKEN_SECRET:-change-me-superadmin-docker}
+      PANEL_URL: http://localhost:${FRONTEND_PORT:-5174}
+      FRONTEND_URL: http://localhost:${FRONTEND_PORT:-5174}
+    ports:
+      - "${BACKEND_PORT:-5001}:5001"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: clicagenda-nueva-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      VITE_API_URL: http://backend:5001
+    ports:
+      - "${FRONTEND_PORT:-5174}:5174"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    stdin_open: true
+    tty: true
+
+volumes:
+  nueva_mysql_data:

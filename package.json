@@ -1,0 +1,25 @@
+{
+  "name": "clicagenda-nueva-app",
+  "version": "0.1.0",
+  "description": "ClicAgenda - Aplicación multi-instancia (Fase 0)",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "migrate:master": "cd backend && node migrations/run-migrations.js master",
+    "migrate:instance": "cd backend && node migrations/run-migrations.js instance citas_demo_medico",
+    "db:create-master": "cd backend && node scripts/create-master-db.js",
+    "db:setup": "cd backend && node scripts/setup-databases.js",
+    "setup": "npm run install:all && npm run docker:up:infra && npm run db:setup",
+    "start:infra": "docker-compose up -d mysql",
+    "docker:up": "docker-compose up -d",
+    "docker:up:infra": "docker-compose up -d mysql",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  }
+}

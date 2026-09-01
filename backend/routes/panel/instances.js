@@ -3,10 +3,9 @@ const jwt = require('jsonwebtoken');
 const masterDb = require('../../db/master');
 const config = require('../../config');
 const { authSuperadmin } = require('../../middleware/authSuperadmin');
-const { runInstanceMigrations } = require('../../migrations/run-migrations');
+const { seedNewInstance } = require('../../lib/seedInstance');
 
 const router = express.Router();
-const prefix = config.instancePrefix || 'citas_';
 
 function slugify(name) {
   return name
@@ -41,7 +40,7 @@ router.use(authSuperadmin);
 router.get('/', async (req, res) => {
   try {
     const rows = await masterDb.query(
-      `SELECT i.id, i.name, i.slug, i.db_name, i.state, i.contact_email, i.created_at, p.name AS plan_name
+      `SELECT i.id, i.name, i.slug, i.db_name, i.state, i.contact_email, i.specialty, i.created_at, p.name AS plan_name
        FROM instances i
        LEFT JOIN plans p ON p.id = i.plan_id
        ORDER BY i.created_at DESC`
@@ -55,39 +54,31 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { name, slug: slugInput, contact_email, plan_id, template_id, domain_type, domain_value } = req.body || {};
+    const { name, slug: slugInput, contact_email, plan_id, template_id, domain_type, domain_value, specialty } = req.body || {};
     if (!name) return res.status(400).json({ error: 'Nombre requerido.' });
 
     const slug = slugInput ? slugify(slugInput) : slugify(name);
-    const dbName = prefix + slug;
+    const dbName = `tenant_${slug}`;
 
     const existing = await masterDb.query('SELECT id FROM instances WHERE slug = ? OR db_name = ?', [slug, dbName]);
     if (existing.length) {
       return res.status(400).json({ error: 'Ya existe una instancia con ese nombre o slug.' });
     }
 
-    const conn = await masterDb.getConnection();
-    try {
-      await conn.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
-    } finally {
-      conn.release();
-    }
-
-    await runInstanceMigrations(dbName);
-
     const planId = plan_id || null;
     const templateId = template_id || null;
-    const domainType = domain_type || 'subdomain_ours';
-    const domainValue = domain_value || `${slug}.localhost`;
+    const domainType = domain_type || 'path';
+    const domainValue = domain_value || slug;
 
-    await masterDb.query(
-      `INSERT INTO instances (name, slug, db_name, domain_type, domain_value, plan_id, template_id, state, contact_email)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
-      [name, slug, dbName, domainType, domainValue, planId, templateId, contact_email || null]
+    const inserted = await masterDb.query(
+      `INSERT INTO instances (name, slug, db_name, domain_type, domain_value, plan_id, template_id, state, contact_email, specialty)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+       RETURNING id, name, slug, db_name, state, created_at`,
+      [name, slug, dbName, domainType, domainValue, planId, templateId, contact_email || null, specialty || 'general']
     );
 
-    const [inserted] = await masterDb.query('SELECT id, name, slug, db_name, state, created_at FROM instances WHERE slug = ?', [slug]);
-    return res.status(201).json(inserted);
+    await seedNewInstance(inserted[0].id, name, slug, specialty || 'general');
+    return res.status(201).json(inserted[0]);
   } catch (err) {
     console.error('Create instance error:', err);
     return res.status(500).json({ error: err.message || 'Error al crear instancia.' });
@@ -106,17 +97,9 @@ router.post('/:id/enter', async (req, res) => {
       { expiresIn: '5m' }
     );
 
-    let baseUrl = inst.domain_value;
-    if (!baseUrl.startsWith('http')) baseUrl = 'http://' + baseUrl;
-    const panelBase = (config.panelUrl || config.frontendUrl || 'http://localhost:5174').replace(/\/$/, '');
-    if (baseUrl === 'http://localhost' || baseUrl === 'http://localhost/') {
-      baseUrl = panelBase;
-    } else if (baseUrl.includes('.localhost') && panelBase.includes('localhost')) {
-      const port = panelBase.match(/:(\d+)/);
-      if (port) baseUrl = baseUrl.replace(/:\d+$/, '') + ':' + port[1];
-    }
-    const enterUrl = `${baseUrl}/auth/superadmin?token=${signed}`;
-    return res.json({ enterUrl, token: signed });
+    const panelBase = (config.panelUrl || config.frontendUrl || '').replace(/\/$/, '');
+    const enterUrl = `${panelBase}/auth/superadmin?token=${signed}`;
+    return res.json({ enterUrl, token: signed, slug: inst.slug });
   } catch (err) {
     console.error('Enter instance error:', err);
     return res.status(500).json({ error: 'Error al generar enlace.' });

@@ -1,1 +1,23 @@
-{"name":"clicagenda-backend","version":"0.1.0","main":"server.js","scripts":{"dev":"nodemon server.js","start":"node server.js","migrate:master":"node migrations/run-migrations.js master","migrate:instance":"node migrations/run-migrations.js instance","db:create-master":"node scripts/create-master-db.js","db:setup":"node scripts/setup-databases.js"},"dependencies":{"bcryptjs":"^2.4.3","cors":"^2.8.5","dotenv":"^16.3.1","express":"^4.18.2","jsonwebtoken":"^9.0.2","multer":"^2.1.1","mysql2":"^3.6.5"},"devDependencies":{"nodemon":"^3.0.1"}}
+{
+  "name": "clicagenda-backend",
+  "version": "0.2.0",
+  "main": "server.js",
+  "scripts": {
+    "dev": "nodemon server.js",
+    "start": "node server.js",
+    "db:setup": "node scripts/setup-postgres.js",
+    "db:seed": "node scripts/seed-demo.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.1.1",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}

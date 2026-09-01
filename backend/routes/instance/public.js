@@ -31,10 +31,10 @@ router.get('/company', async (req, res) => {
   try {
     let rows;
     try {
-      rows = await tenantPool.queryTenant(req.tenant.dbName, `SELECT ${COMPANY_EXTENDED_COLS} FROM company LIMIT 1`);
+      rows = await tenantPool.queryTenant(req.tenant.instanceId, `SELECT ${COMPANY_EXTENDED_COLS} FROM company LIMIT 1`);
     } catch (colErr) {
-      if (colErr.code === 'ER_BAD_FIELD_ERROR') {
-        rows = await tenantPool.queryTenant(req.tenant.dbName, `SELECT ${COMPANY_BASE_COLS} FROM company LIMIT 1`);
+      if (colErr.code === '42703') {
+        rows = await tenantPool.queryTenant(req.tenant.instanceId, `SELECT ${COMPANY_BASE_COLS} FROM company LIMIT 1`);
       } else throw colErr;
     }
     const row = parseCompanyRow(rows[0] || {});
@@ -49,7 +49,7 @@ router.get('/company', async (req, res) => {
 router.get('/services', async (req, res) => {
   try {
     const rows = await tenantPool.queryTenant(
-      req.tenant.dbName,
+      req.tenant.instanceId,
       'SELECT id, name, duration_minutes, price FROM services ORDER BY name'
     );
     return res.json(rows || []);
@@ -68,7 +68,7 @@ router.post('/appointment-request', async (req, res) => {
 
     let tableExists = true;
     try {
-      await tenantPool.queryTenant(req.tenant.dbName, 'SELECT 1 FROM appointment_requests LIMIT 1');
+      await tenantPool.queryTenant(req.tenant.instanceId, 'SELECT 1 FROM appointment_requests LIMIT 1');
     } catch (_) {
       tableExists = false;
     }
@@ -79,7 +79,7 @@ router.post('/appointment-request', async (req, res) => {
     const serviceId = service_id ? parseInt(service_id, 10) : null;
     const prefDate = preferred_date && String(preferred_date).trim() ? String(preferred_date).trim() : null;
 
-    await tenantPool.queryTenant(req.tenant.dbName,
+    await tenantPool.queryTenant(req.tenant.instanceId,
       `INSERT INTO appointment_requests (name, email, phone, service_id, preferred_date, message, status)
        VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
       [String(name).trim(), String(email).trim(), (phone && String(phone).trim()) || null, serviceId, prefDate, (message && String(message).trim()) || null]

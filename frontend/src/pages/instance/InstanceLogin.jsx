@@ -121,7 +121,7 @@ export default function InstanceLogin() {
               type="text"
               value={slugInput}
               onChange={(e) => setSlugInput(e.target.value)}
-              placeholder="ej. demo_medico"
+              placeholder="demo_dental, demo_psicologia o demo_fisioterapia"
               style={{ width: '100%', padding: 10 }}
               autoFocus
             />
@@ -158,7 +158,9 @@ export default function InstanceLogin() {
           Usar otra instancia
         </button>
       )}
-      <p style={{ marginTop: 20, fontSize: 12, color: '#888' }}>Demo: admin@demo.es / changeme</p>
+      <p style={{ marginTop: 20, fontSize: 12, color: '#888' }}>
+        Demo: admin@demo.es / changeme · Slugs: demo_dental, demo_psicologia, demo_fisioterapia
+      </p>
     </div>
   );
 }

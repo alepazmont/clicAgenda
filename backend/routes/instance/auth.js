@@ -13,7 +13,7 @@ router.post('/login', async (req, res) => {
     if (!email || !password) return res.status(400).json({ error: 'Email y contrasena requeridos.' });
     if (!req.tenant) return res.status(400).json({ error: 'Instancia no resuelta.' });
 
-    const dbName = req.tenant.dbName;
+    const dbName = req.tenant.instanceId;
     const users = await tenantPool.queryTenant(dbName, 'SELECT id, email, password_hash, name, role FROM users WHERE email = ? LIMIT 1', [email]);
     if (!users.length) return res.status(401).json({ error: 'Credenciales incorrectas.' });
 
@@ -36,7 +36,7 @@ router.post('/login', async (req, res) => {
 router.get('/me', authInstance, async (req, res) => {
   if (req.instanceUser.role === 'superadmin') return res.json(req.instanceUser);
   try {
-    const rows = await tenantPool.queryTenant(req.tenant.dbName, 'SELECT id, email, name, role, company_id FROM users WHERE id = ?', [req.instanceUser.id]);
+    const rows = await tenantPool.queryTenant(req.tenant.instanceId, 'SELECT id, email, name, role, company_id FROM users WHERE id = ?', [req.instanceUser.id]);
     if (!rows.length) return res.status(404).json({ error: 'Usuario no encontrado.' });
     return res.json(rows[0]);
   } catch (err) {

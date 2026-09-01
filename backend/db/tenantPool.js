@@ -1,39 +1,61 @@
-/**
- * Gestor de pools por tenant (instancia).
- * Fase 0: implementación mínima; bajo demanda se crea pool por db_name.
- * Techo global y LRU según ESTRATEGIA_BBDD_Y_MIGRACIONES.md se añadirán después.
- */
-const mysql = require('mysql2/promise');
-const config = require('../config');
+const pg = require('./pg');
 
-const pools = new Map();
-const maxPerTenant = parseInt(process.env.DB_POOL_MAX_PER_TENANT || '3', 10);
+function normalizeRows(rows) {
+  if (!Array.isArray(rows)) return rows;
+  return rows.map((row) => {
+    if (!row || typeof row !== 'object') return row;
+    const next = { ...row };
+    if (next.start_time != null && next.start == null) next.start = next.start_time;
+    if (next.end_time != null && next.end == null) next.end = next.end_time;
+    return next;
+  });
+}
 
-function getTenantPool(dbName) {
-  if (!pools.has(dbName)) {
-    pools.set(dbName, mysql.createPool({
-      host: config.masterDb.host,
-      port: config.masterDb.port,
-      user: config.masterDb.user,
-      password: config.masterDb.password,
-      database: dbName,
-      waitForConnections: true,
-      connectionLimit: maxPerTenant,
-      queueLimit: 0,
-      charset: 'utf8mb4',
-    }));
+async function withTenantContext(instanceId, fn) {
+  const client = await pg.getPool().connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`SELECT set_config('app.instance_id', $1, true)`, [String(instanceId)]);
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
   }
-  return pools.get(dbName);
 }
 
-async function queryTenant(dbName, sql, params = []) {
-  const pool = getTenantPool(dbName);
-  const [rows] = await pool.execute(sql, params);
-  return rows;
+async function runTenantQuery(client, sql, params = []) {
+  const pgSql = pg.pgifySql(sql);
+  const { sql: converted, params: convertedParams } = pg.convertPlaceholders(pgSql, params);
+  const trimmed = converted.trim().toUpperCase();
+  let finalSql = converted;
+  if (trimmed.startsWith('INSERT') && !/RETURNING/i.test(converted)) {
+    finalSql = `${converted.replace(/;\s*$/, '')} RETURNING id`;
+  }
+  return client.query(finalSql, convertedParams);
 }
 
-async function getTenantConnection(dbName) {
-  return getTenantPool(dbName).getConnection();
+async function queryTenant(instanceId, sql, params = []) {
+  return withTenantContext(instanceId, async (client) => {
+    const result = await runTenantQuery(client, sql, params);
+    const trimmed = pg.pgifySql(sql).trim().toUpperCase();
+    if (trimmed.startsWith('SELECT')) {
+      return normalizeRows(result.rows);
+    }
+    if (trimmed.startsWith('INSERT')) {
+      return [{ insertId: result.rows[0]?.id ?? null, affectedRows: result.rowCount }];
+    }
+    return { affectedRows: result.rowCount, insertId: null };
+  });
 }
 
-module.exports = { getTenantPool, queryTenant, getTenantConnection };
+async function getTenantConnection(instanceId) {
+  const client = await pg.getPool().connect();
+  await client.query(`SELECT set_config('app.instance_id', $1, false)`, [String(instanceId)]);
+  return client;
+}
+
+module.exports = { queryTenant, getTenantConnection };

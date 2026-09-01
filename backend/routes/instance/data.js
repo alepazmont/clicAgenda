@@ -52,18 +52,18 @@ router.use(authInstance);
 
 router.get('/stats', async (req, res) => {
   try {
-    const db = req.tenant.dbName;
-    const patientsRows = await tenantPool.queryTenant(db, 'SELECT COUNT(*) AS total FROM patients');
-    const servicesRows = await tenantPool.queryTenant(db, 'SELECT COUNT(*) AS total FROM services');
-    const appointmentsRows = await tenantPool.queryTenant(db, 'SELECT COUNT(*) AS total FROM appointments');
-    const nextAppointments = await tenantPool.queryTenant(db,
+    const tenantId = req.tenant.instanceId;
+    const patientsRows = await tenantPool.queryTenant(tenantId, 'SELECT COUNT(*) AS total FROM patients');
+    const servicesRows = await tenantPool.queryTenant(tenantId, 'SELECT COUNT(*) AS total FROM services');
+    const appointmentsRows = await tenantPool.queryTenant(tenantId, 'SELECT COUNT(*) AS total FROM appointments');
+    const nextAppointments = await tenantPool.queryTenant(tenantId,
       `SELECT a.id, a.start, a.end, a.status, p.name AS patient_name, s.name AS service_name 
        FROM appointments a LEFT JOIN patients p ON p.id = a.patient_id LEFT JOIN services s ON s.id = a.service_id 
        WHERE a.start >= NOW() ORDER BY a.start ASC LIMIT 5`);
     return res.json({
-      patients: (patientsRows[0] && patientsRows[0].total) || 0,
-      services: (servicesRows[0] && servicesRows[0].total) || 0,
-      appointments: (appointmentsRows[0] && appointmentsRows[0].total) || 0,
+      patients: parseInt(patientsRows[0]?.total, 10) || 0,
+      services: parseInt(servicesRows[0]?.total, 10) || 0,
+      appointments: parseInt(appointmentsRows[0]?.total, 10) || 0,
       nextAppointments: nextAppointments || [],
     });
   } catch (err) {
@@ -73,7 +73,7 @@ router.get('/stats', async (req, res) => {
 
 router.get('/appointments', async (req, res) => {
   try {
-    const rows = await tenantPool.queryTenant(req.tenant.dbName,
+    const rows = await tenantPool.queryTenant(req.tenant.instanceId,
       `SELECT a.id, a.patient_id, a.service_id, a.start, a.end, a.status, a.payment_info, p.name AS patient_name, s.name AS service_name 
        FROM appointments a 
        LEFT JOIN patients p ON p.id = a.patient_id 
@@ -90,7 +90,7 @@ router.get('/appointments/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (!id) return res.status(400).json({ error: 'ID invalido.' });
-    let [row] = await tenantPool.queryTenant(req.tenant.dbName,
+    let [row] = await tenantPool.queryTenant(req.tenant.instanceId,
       `SELECT a.id, a.patient_id, a.service_id, a.start, a.end, a.status, a.payment_info, p.name AS patient_name, s.name AS service_name 
        FROM appointments a 
        LEFT JOIN patients p ON p.id = a.patient_id 
@@ -98,7 +98,7 @@ router.get('/appointments/:id', async (req, res) => {
        WHERE a.id = ?`, [id]);
     if (!row) return res.status(404).json({ error: 'Cita no encontrada.' });
     try {
-      const [r2] = await tenantPool.queryTenant(req.tenant.dbName,
+      const [r2] = await tenantPool.queryTenant(req.tenant.instanceId,
         `SELECT a.id, a.patient_id, a.service_id, a.start, a.end, a.status, a.notes, a.payment_info, p.name AS patient_name, s.name AS service_name 
          FROM appointments a LEFT JOIN patients p ON p.id = a.patient_id LEFT JOIN services s ON s.id = a.service_id WHERE a.id = ?`, [id]);
       if (r2) row = r2;
@@ -111,7 +111,7 @@ router.get('/appointments/:id', async (req, res) => {
 
 router.get('/patients', async (req, res) => {
   try {
-    const rows = await tenantPool.queryTenant(req.tenant.dbName,
+    const rows = await tenantPool.queryTenant(req.tenant.instanceId,
       'SELECT id, name, email, phone, created_at FROM patients ORDER BY name LIMIT 500');
     return res.json(rows);
   } catch (err) {
@@ -124,35 +124,35 @@ router.get('/patients/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (!id) return res.status(400).json({ error: 'ID invalido.' });
-    let [patient] = await tenantPool.queryTenant(req.tenant.dbName,
+    let [patient] = await tenantPool.queryTenant(req.tenant.instanceId,
       'SELECT id, name, email, phone, created_at FROM patients WHERE id = ?', [id]);
     try {
-      const [p] = await tenantPool.queryTenant(req.tenant.dbName,
+      const [p] = await tenantPool.queryTenant(req.tenant.instanceId,
         'SELECT id, name, email, phone, dni, address, birth_date, notes, created_at FROM patients WHERE id = ?', [id]);
       if (p) patient = p;
     } catch (_) {
       try {
-        const [p] = await tenantPool.queryTenant(req.tenant.dbName,
+        const [p] = await tenantPool.queryTenant(req.tenant.instanceId,
           'SELECT id, name, email, phone, notes, created_at FROM patients WHERE id = ?', [id]);
         if (p) patient = p;
       } catch (_2) { /* columnas opcionales */ }
     }
     if (!patient) return res.status(404).json({ error: 'Paciente no encontrado.' });
-    const appointments = await tenantPool.queryTenant(req.tenant.dbName,
+    const appointments = await tenantPool.queryTenant(req.tenant.instanceId,
       `SELECT a.id, a.start, a.end, a.status, p.name AS patient_name, s.name AS service_name 
        FROM appointments a LEFT JOIN patients p ON p.id = a.patient_id LEFT JOIN services s ON s.id = a.service_id 
        WHERE a.patient_id = ? ORDER BY a.start DESC LIMIT 100`, [id]);
-    const patientServices = await tenantPool.queryTenant(req.tenant.dbName,
+    const patientServices = await tenantPool.queryTenant(req.tenant.instanceId,
       `SELECT ps.id, ps.patient_id, ps.service_id, ps.remaining_sessions, ps.created_at, s.name AS service_name 
        FROM patient_services ps JOIN services s ON s.id = ps.service_id WHERE ps.patient_id = ?`, [id]);
     let treatments = [];
     let documents = [];
     try {
-      treatments = await tenantPool.queryTenant(req.tenant.dbName,
+      treatments = await tenantPool.queryTenant(req.tenant.instanceId,
         'SELECT id, patient_id, title, description, status, start_date, end_date, evolution_notes, created_at FROM medical_treatments WHERE patient_id = ? ORDER BY created_at DESC', [id]);
     } catch (_) { /* tabla puede no existir aún */ }
     try {
-      documents = await tenantPool.queryTenant(req.tenant.dbName,
+      documents = await tenantPool.queryTenant(req.tenant.instanceId,
         'SELECT id, patient_id, name, description, file_path, document_type, created_at FROM medical_documents WHERE patient_id = ? ORDER BY created_at DESC', [id]);
     } catch (_) { /* tabla puede no existir aún */ }
     return res.json({
@@ -170,7 +170,7 @@ router.get('/patients/:id', async (req, res) => {
 
 router.get('/services', async (req, res) => {
   try {
-    const rows = await tenantPool.queryTenant(req.tenant.dbName, 'SELECT id, name, duration_minutes, price, created_at FROM services ORDER BY name');
+    const rows = await tenantPool.queryTenant(req.tenant.instanceId, 'SELECT id, name, duration_minutes, price, created_at FROM services ORDER BY name');
     return res.json(rows);
   } catch (err) {
     console.error('Instance services error:', err);
@@ -182,10 +182,10 @@ router.get('/services/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (!id) return res.status(400).json({ error: 'ID invalido.' });
-    let [row] = await tenantPool.queryTenant(req.tenant.dbName, 'SELECT id, name, duration_minutes, price, created_at FROM services WHERE id = ?', [id]);
+    let [row] = await tenantPool.queryTenant(req.tenant.instanceId, 'SELECT id, name, duration_minutes, price, created_at FROM services WHERE id = ?', [id]);
     if (!row) return res.status(404).json({ error: 'Servicio no encontrado.' });
     try {
-      const [r2] = await tenantPool.queryTenant(req.tenant.dbName, 'SELECT id, name, duration_minutes, price, description, created_at FROM services WHERE id = ?', [id]);
+      const [r2] = await tenantPool.queryTenant(req.tenant.instanceId, 'SELECT id, name, duration_minutes, price, description, created_at FROM services WHERE id = ?', [id]);
       if (r2) row = r2;
     } catch (_) {}
     return res.json(row);
@@ -212,16 +212,16 @@ router.post('/company/logo', uploadCompanyLogo.single('logo'), async (req, res) 
     const slug = (req.tenant && req.tenant.slug) || 'default';
     const relativePath = path.join('company', slug, req.file.filename).replace(/\\/g, '/');
     try {
-      await tenantPool.queryTenant(req.tenant.dbName, 'UPDATE company SET logo_url = ? WHERE id = 1', [relativePath]);
+      await tenantPool.queryTenant(req.tenant.instanceId, 'UPDATE company SET logo_url = ? WHERE id = 1', [relativePath]);
     } catch (colErr) {
-      if (colErr.code === 'ER_BAD_FIELD_ERROR') return res.status(400).json({ error: 'Actualiza la base de datos (migraciones).' });
+      if (colErr.code === '42703') return res.status(400).json({ error: 'Actualiza la base de datos (migraciones).' });
       throw colErr;
     }
     let rows;
     try {
-      rows = await tenantPool.queryTenant(req.tenant.dbName, `SELECT ${COMPANY_EXTENDED} FROM company LIMIT 1`);
+      rows = await tenantPool.queryTenant(req.tenant.instanceId, `SELECT ${COMPANY_EXTENDED} FROM company LIMIT 1`);
     } catch (_) {
-      rows = await tenantPool.queryTenant(req.tenant.dbName, `SELECT id, name, logo_url, colors, business_hours FROM company LIMIT 1`);
+      rows = await tenantPool.queryTenant(req.tenant.instanceId, `SELECT id, name, logo_url, colors, business_hours FROM company LIMIT 1`);
     }
     return res.json(parseCompany(rows[0] || {}));
   } catch (err) {
@@ -234,13 +234,13 @@ router.get('/company', async (req, res) => {
   try {
     let rows;
     try {
-      rows = await tenantPool.queryTenant(req.tenant.dbName, `SELECT ${COMPANY_EXTENDED} FROM company LIMIT 1`);
+      rows = await tenantPool.queryTenant(req.tenant.instanceId, `SELECT ${COMPANY_EXTENDED} FROM company LIMIT 1`);
     } catch (colErr) {
-      if (colErr.code === 'ER_BAD_FIELD_ERROR') {
+      if (colErr.code === '42703') {
         try {
-          rows = await tenantPool.queryTenant(req.tenant.dbName, `SELECT id, name, logo_url, colors, business_hours, professionals FROM company LIMIT 1`);
+          rows = await tenantPool.queryTenant(req.tenant.instanceId, `SELECT id, name, logo_url, colors, business_hours, professionals FROM company LIMIT 1`);
         } catch (e2) {
-          rows = await tenantPool.queryTenant(req.tenant.dbName, `SELECT ${COMPANY_BASE} FROM company LIMIT 1`);
+          rows = await tenantPool.queryTenant(req.tenant.instanceId, `SELECT ${COMPANY_BASE} FROM company LIMIT 1`);
         }
       } else throw colErr;
     }
@@ -278,16 +278,16 @@ router.patch('/company', async (req, res) => {
     if (google_maps_embed_src !== undefined) { updates.push('google_maps_embed_src = ?'); values.push(google_maps_embed_src || null); }
     if (updates.length === 0) return res.status(400).json({ error: 'Nada que actualizar.' });
     values.push(1);
-    await tenantPool.queryTenant(req.tenant.dbName, `UPDATE company SET ${updates.join(', ')} WHERE id = ?`, values);
+    await tenantPool.queryTenant(req.tenant.instanceId, `UPDATE company SET ${updates.join(', ')} WHERE id = ?`, values);
     let rows;
     try {
-      rows = await tenantPool.queryTenant(req.tenant.dbName, `SELECT ${COMPANY_EXTENDED} FROM company LIMIT 1`);
+      rows = await tenantPool.queryTenant(req.tenant.instanceId, `SELECT ${COMPANY_EXTENDED} FROM company LIMIT 1`);
     } catch (selErr) {
-      if (selErr.code === 'ER_BAD_FIELD_ERROR') {
+      if (selErr.code === '42703') {
         try {
-          rows = await tenantPool.queryTenant(req.tenant.dbName, 'SELECT id, name, logo_url, colors, business_hours, professionals FROM company LIMIT 1');
+          rows = await tenantPool.queryTenant(req.tenant.instanceId, 'SELECT id, name, logo_url, colors, business_hours, professionals FROM company LIMIT 1');
         } catch (_) {
-          rows = await tenantPool.queryTenant(req.tenant.dbName, `SELECT ${COMPANY_BASE} FROM company LIMIT 1`);
+          rows = await tenantPool.queryTenant(req.tenant.instanceId, `SELECT ${COMPANY_BASE} FROM company LIMIT 1`);
         }
       } else throw selErr;
     }
@@ -299,12 +299,12 @@ router.patch('/company', async (req, res) => {
 
 router.get('/appointment-requests', async (req, res) => {
   try {
-    const rows = await tenantPool.queryTenant(req.tenant.dbName,
+    const rows = await tenantPool.queryTenant(req.tenant.instanceId,
       `SELECT ar.id, ar.name, ar.email, ar.phone, ar.service_id, ar.preferred_date, ar.message, ar.status, ar.created_at, s.name AS service_name
        FROM appointment_requests ar LEFT JOIN services s ON s.id = ar.service_id ORDER BY ar.created_at DESC LIMIT 200`);
     return res.json(rows || []);
   } catch (err) {
-    if (err.code === 'ER_NO_SUCH_TABLE') return res.json([]);
+    if (err.code === '42P01') return res.json([]);
     return res.status(500).json({ error: 'Error al listar solicitudes.' });
   }
 });
@@ -313,7 +313,7 @@ router.post('/patients', async (req, res) => {
   try {
     const { name, email, phone, dni, address, birth_date } = req.body || {};
     if (!name || !String(name).trim()) return res.status(400).json({ error: 'Nombre requerido.' });
-    const [result] = await tenantPool.queryTenant(req.tenant.dbName,
+    const [result] = await tenantPool.queryTenant(req.tenant.instanceId,
       'INSERT INTO patients (name, email, phone) VALUES (?, ?, ?)',
       [String(name).trim(), (email && String(email).trim()) || null, (phone && String(phone).trim()) || null]);
     const id = result.insertId;
@@ -323,12 +323,12 @@ router.post('/patients', async (req, res) => {
         if (dni !== undefined) { up.push('dni = ?'); v.push((dni && String(dni).trim()) || null); }
         if (address !== undefined) { up.push('address = ?'); v.push((address && String(address).trim()) || null); }
         if (birth_date !== undefined) { up.push('birth_date = ?'); v.push(birth_date || null); }
-        if (up.length) { v.push(id); await tenantPool.queryTenant(req.tenant.dbName, `UPDATE patients SET ${up.join(', ')} WHERE id = ?`, v); }
+        if (up.length) { v.push(id); await tenantPool.queryTenant(req.tenant.instanceId, `UPDATE patients SET ${up.join(', ')} WHERE id = ?`, v); }
       } catch (_) { /* columnas opcionales */ }
     }
-    let [row] = await tenantPool.queryTenant(req.tenant.dbName, 'SELECT id, name, email, phone, created_at FROM patients WHERE id = ?', [id]);
+    let [row] = await tenantPool.queryTenant(req.tenant.instanceId, 'SELECT id, name, email, phone, created_at FROM patients WHERE id = ?', [id]);
     try {
-      const [r2] = await tenantPool.queryTenant(req.tenant.dbName, 'SELECT id, name, email, phone, dni, address, birth_date, created_at FROM patients WHERE id = ?', [id]);
+      const [r2] = await tenantPool.queryTenant(req.tenant.instanceId, 'SELECT id, name, email, phone, dni, address, birth_date, created_at FROM patients WHERE id = ?', [id]);
       if (r2) row = r2;
     } catch (_) {}
     return res.status(201).json(row);
@@ -342,7 +342,7 @@ router.delete('/patients/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (!id) return res.status(400).json({ error: 'ID invalido.' });
-    const r = await tenantPool.queryTenant(req.tenant.dbName, 'DELETE FROM patients WHERE id = ?', [id]);
+    const r = await tenantPool.queryTenant(req.tenant.instanceId, 'DELETE FROM patients WHERE id = ?', [id]);
     if (!r || r.affectedRows === 0) return res.status(404).json({ error: 'Paciente no encontrado.' });
     return res.status(204).send();
   } catch (err) {
@@ -367,8 +367,8 @@ router.put('/patients/:id', async (req, res) => {
     if (birth_date !== undefined) { updates.push('birth_date = ?'); values.push(birth_date || null); }
     if (updates.length === 0) return res.status(400).json({ error: 'Nada que actualizar.' });
     values.push(id);
-    await tenantPool.queryTenant(req.tenant.dbName, `UPDATE patients SET ${updates.join(', ')} WHERE id = ?`, values);
-    const [row] = await tenantPool.queryTenant(req.tenant.dbName, 'SELECT id, name, email, phone, dni, address, birth_date, notes, created_at FROM patients WHERE id = ?', [id]);
+    await tenantPool.queryTenant(req.tenant.instanceId, `UPDATE patients SET ${updates.join(', ')} WHERE id = ?`, values);
+    const [row] = await tenantPool.queryTenant(req.tenant.instanceId, 'SELECT id, name, email, phone, dni, address, birth_date, notes, created_at FROM patients WHERE id = ?', [id]);
     if (!row) return res.status(404).json({ error: 'Paciente no encontrado.' });
     return res.json(row);
   } catch (err) {
@@ -383,17 +383,17 @@ router.post('/services', async (req, res) => {
     const duration = duration_minutes != null ? parseInt(duration_minutes, 10) : 30;
     const priceVal = price != null && price !== '' ? parseFloat(price) : null;
     try {
-      const [result] = await tenantPool.queryTenant(req.tenant.dbName,
+      const [result] = await tenantPool.queryTenant(req.tenant.instanceId,
         'INSERT INTO services (name, duration_minutes, price, description) VALUES (?, ?, ?, ?)',
         [String(name).trim(), isNaN(duration) ? 30 : duration, priceVal, (description && String(description).trim()) || null]);
-      const [row] = await tenantPool.queryTenant(req.tenant.dbName, 'SELECT id, name, duration_minutes, price, description, created_at FROM services WHERE id = ?', [result.insertId]);
+      const [row] = await tenantPool.queryTenant(req.tenant.instanceId, 'SELECT id, name, duration_minutes, price, description, created_at FROM services WHERE id = ?', [result.insertId]);
       return res.status(201).json(row || { id: result.insertId, name: name.trim(), duration_minutes: duration, price: priceVal, description: description || null });
     } catch (insErr) {
-      if (insErr.code === 'ER_BAD_FIELD_ERROR') {
-        const [result] = await tenantPool.queryTenant(req.tenant.dbName,
+      if (insErr.code === '42703') {
+        const [result] = await tenantPool.queryTenant(req.tenant.instanceId,
           'INSERT INTO services (name, duration_minutes, price) VALUES (?, ?, ?)',
           [String(name).trim(), isNaN(duration) ? 30 : duration, priceVal]);
-        const [row] = await tenantPool.queryTenant(req.tenant.dbName, 'SELECT id, name, duration_minutes, price, created_at FROM services WHERE id = ?', [result.insertId]);
+        const [row] = await tenantPool.queryTenant(req.tenant.instanceId, 'SELECT id, name, duration_minutes, price, created_at FROM services WHERE id = ?', [result.insertId]);
         return res.status(201).json(row);
       }
       throw insErr;
@@ -407,7 +407,7 @@ router.delete('/services/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (!id) return res.status(400).json({ error: 'ID invalido.' });
-    const r = await tenantPool.queryTenant(req.tenant.dbName, 'DELETE FROM services WHERE id = ?', [id]);
+    const r = await tenantPool.queryTenant(req.tenant.instanceId, 'DELETE FROM services WHERE id = ?', [id]);
     if (!r || r.affectedRows === 0) return res.status(404).json({ error: 'Servicio no encontrado.' });
     return res.status(204).send();
   } catch (err) {
@@ -429,10 +429,10 @@ router.put('/services/:id', async (req, res) => {
     if (description !== undefined) { updates.push('description = ?'); values.push(description != null ? String(description) : null); }
     if (updates.length === 0) return res.status(400).json({ error: 'Nada que actualizar.' });
     values.push(id);
-    await tenantPool.queryTenant(req.tenant.dbName, `UPDATE services SET ${updates.join(', ')} WHERE id = ?`, values);
-    let [row] = await tenantPool.queryTenant(req.tenant.dbName, 'SELECT id, name, duration_minutes, price, created_at FROM services WHERE id = ?', [id]);
+    await tenantPool.queryTenant(req.tenant.instanceId, `UPDATE services SET ${updates.join(', ')} WHERE id = ?`, values);
+    let [row] = await tenantPool.queryTenant(req.tenant.instanceId, 'SELECT id, name, duration_minutes, price, created_at FROM services WHERE id = ?', [id]);
     try {
-      const [r2] = await tenantPool.queryTenant(req.tenant.dbName, 'SELECT id, name, duration_minutes, price, description, created_at FROM services WHERE id = ?', [id]);
+      const [r2] = await tenantPool.queryTenant(req.tenant.instanceId, 'SELECT id, name, duration_minutes, price, description, created_at FROM services WHERE id = ?', [id]);
       if (r2) row = r2;
     } catch (_) {}
     if (!row) return res.status(404).json({ error: 'Servicio no encontrado.' });
@@ -452,19 +452,19 @@ router.post('/appointments', async (req, res) => {
     const endDate = end ? new Date(end) : new Date(startDate.getTime() + 30 * 60 * 1000);
     if (isNaN(startDate.getTime())) return res.status(400).json({ error: 'Fecha de inicio invalida.' });
     try {
-      const [result] = await tenantPool.queryTenant(req.tenant.dbName,
+      const [result] = await tenantPool.queryTenant(req.tenant.instanceId,
         'INSERT INTO appointments (patient_id, user_id, service_id, start, end, status, notes) VALUES (?, ?, ?, ?, ?, ?, ?)',
         [parseInt(patient_id, 10), userId, parseInt(service_id, 10), startDate, endDate, 'scheduled', (notes && String(notes).trim()) || null]);
-      const [row] = await tenantPool.queryTenant(req.tenant.dbName,
+      const [row] = await tenantPool.queryTenant(req.tenant.instanceId,
         `SELECT a.id, a.start, a.end, a.status, a.notes, p.name AS patient_name, s.name AS service_name 
          FROM appointments a LEFT JOIN patients p ON p.id = a.patient_id LEFT JOIN services s ON s.id = a.service_id WHERE a.id = ?`, [result.insertId]);
       return res.status(201).json(row);
     } catch (insErr) {
-      if (insErr.code === 'ER_BAD_FIELD_ERROR') {
-        const [result] = await tenantPool.queryTenant(req.tenant.dbName,
+      if (insErr.code === '42703') {
+        const [result] = await tenantPool.queryTenant(req.tenant.instanceId,
           'INSERT INTO appointments (patient_id, user_id, service_id, start, end, status) VALUES (?, ?, ?, ?, ?, ?)',
           [parseInt(patient_id, 10), userId, parseInt(service_id, 10), startDate, endDate, 'scheduled']);
-        const [row] = await tenantPool.queryTenant(req.tenant.dbName,
+        const [row] = await tenantPool.queryTenant(req.tenant.instanceId,
           `SELECT a.id, a.start, a.end, a.status, p.name AS patient_name, s.name AS service_name 
            FROM appointments a LEFT JOIN patients p ON p.id = a.patient_id LEFT JOIN services s ON s.id = a.service_id WHERE a.id = ?`, [result.insertId]);
         return res.status(201).json(row);
@@ -490,8 +490,8 @@ router.put('/appointments/:id', async (req, res) => {
     if (notes !== undefined) { updates.push('notes = ?'); values.push(notes != null ? String(notes) : null); }
     if (updates.length === 0) return res.status(400).json({ error: 'Nada que actualizar.' });
     values.push(id);
-    await tenantPool.queryTenant(req.tenant.dbName, `UPDATE appointments SET ${updates.join(', ')} WHERE id = ?`, values);
-    const [row] = await tenantPool.queryTenant(req.tenant.dbName,
+    await tenantPool.queryTenant(req.tenant.instanceId, `UPDATE appointments SET ${updates.join(', ')} WHERE id = ?`, values);
+    const [row] = await tenantPool.queryTenant(req.tenant.instanceId,
       `SELECT a.id, a.start, a.end, a.status, p.name AS patient_name, s.name AS service_name 
        FROM appointments a LEFT JOIN patients p ON p.id = a.patient_id LEFT JOIN services s ON s.id = a.service_id WHERE a.id = ?`, [id]);
     if (!row) return res.status(404).json({ error: 'Cita no encontrada.' });
@@ -505,7 +505,7 @@ router.delete('/appointments/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (!id) return res.status(400).json({ error: 'ID invalido.' });
-    const r = await tenantPool.queryTenant(req.tenant.dbName, 'DELETE FROM appointments WHERE id = ?', [id]);
+    const r = await tenantPool.queryTenant(req.tenant.instanceId, 'DELETE FROM appointments WHERE id = ?', [id]);
     if (!r || r.affectedRows === 0) return res.status(404).json({ error: 'Cita no encontrada.' });
     return res.status(204).send();
   } catch (err) {
@@ -519,23 +519,23 @@ router.put('/appointments/:id/payment', async (req, res) => {
     if (!id) return res.status(400).json({ error: 'ID invalido.' });
     const { tipoPago, cantidad, idBono } = req.body || {};
     if (!tipoPago) return res.status(400).json({ error: 'Tipo de pago requerido.' });
-    const db = req.tenant.dbName;
-    const [app] = await tenantPool.queryTenant(db, 'SELECT id, patient_id FROM appointments WHERE id = ?', [id]);
+    const tenantId = req.tenant.instanceId;
+    const [app] = await tenantPool.queryTenant(tenantId, 'SELECT id, patient_id FROM appointments WHERE id = ?', [id]);
     if (!app) return res.status(404).json({ error: 'Cita no encontrada.' });
     let paymentInfo = { tipoPago, cantidad: tipoPago === 'Bono' ? 0 : (parseFloat(cantidad) || 0), paidAt: new Date().toISOString() };
     if (tipoPago === 'Bono' && idBono) {
       paymentInfo.idBono = parseInt(idBono, 10);
-      const [ps] = await tenantPool.queryTenant(db, 'SELECT id, remaining_sessions FROM patient_services WHERE id = ? AND patient_id = ?', [paymentInfo.idBono, app.patient_id]);
+      const [ps] = await tenantPool.queryTenant(tenantId, 'SELECT id, remaining_sessions FROM patient_services WHERE id = ? AND patient_id = ?', [paymentInfo.idBono, app.patient_id]);
       if (!ps || (ps.remaining_sessions || 0) < 1) return res.status(400).json({ error: 'Bono no disponible o sin sesiones.' });
-      await tenantPool.queryTenant(db, 'UPDATE patient_services SET remaining_sessions = remaining_sessions - 1 WHERE id = ?', [paymentInfo.idBono]);
+      await tenantPool.queryTenant(tenantId, 'UPDATE patient_services SET remaining_sessions = remaining_sessions - 1 WHERE id = ?', [paymentInfo.idBono]);
     }
     try {
-      await tenantPool.queryTenant(db, 'UPDATE appointments SET payment_info = ? WHERE id = ?', [JSON.stringify(paymentInfo), id]);
+      await tenantPool.queryTenant(tenantId, 'UPDATE appointments SET payment_info = ? WHERE id = ?', [JSON.stringify(paymentInfo), id]);
     } catch (e) {
-      if (e.code === 'ER_BAD_FIELD_ERROR') return res.status(501).json({ error: 'Pagos no disponibles. Ejecute migraciones.' });
+      if (e.code === '42703') return res.status(501).json({ error: 'Pagos no disponibles. Ejecute migraciones.' });
       throw e;
     }
-    const [row] = await tenantPool.queryTenant(db,
+    const [row] = await tenantPool.queryTenant(tenantId,
       `SELECT a.id, a.start, a.end, a.status, a.payment_info, p.name AS patient_name, s.name AS service_name 
        FROM appointments a LEFT JOIN patients p ON p.id = a.patient_id LEFT JOIN services s ON s.id = a.service_id WHERE a.id = ?`, [id]);
     return res.json(row);
@@ -554,7 +554,7 @@ router.get('/patient_services', async (req, res) => {
     const params = [];
     if (patientId) { sql += ' WHERE ps.patient_id = ?'; params.push(patientId); }
     sql += ' ORDER BY ps.created_at DESC';
-    const rows = await tenantPool.queryTenant(req.tenant.dbName, sql, params);
+    const rows = await tenantPool.queryTenant(req.tenant.instanceId, sql, params);
     return res.json(rows);
   } catch (err) {
     return res.status(500).json({ error: 'Error al listar bonos.' });
@@ -566,10 +566,10 @@ router.post('/patient_services', async (req, res) => {
     const { patient_id, service_id, remaining_sessions } = req.body || {};
     if (!patient_id || !service_id) return res.status(400).json({ error: 'Paciente y servicio requeridos.' });
     const sessions = remaining_sessions != null ? parseInt(remaining_sessions, 10) : 1;
-    const [result] = await tenantPool.queryTenant(req.tenant.dbName,
+    const [result] = await tenantPool.queryTenant(req.tenant.instanceId,
       'INSERT INTO patient_services (patient_id, service_id, remaining_sessions) VALUES (?, ?, ?)',
       [parseInt(patient_id, 10), parseInt(service_id, 10), isNaN(sessions) ? 1 : sessions]);
-    const [row] = await tenantPool.queryTenant(req.tenant.dbName,
+    const [row] = await tenantPool.queryTenant(req.tenant.instanceId,
       'SELECT ps.id, ps.patient_id, ps.service_id, ps.remaining_sessions, ps.created_at, s.name AS service_name FROM patient_services ps JOIN services s ON s.id = ps.service_id WHERE ps.id = ?', [result.insertId]);
     return res.status(201).json(row);
   } catch (err) {
@@ -584,8 +584,8 @@ router.put('/patient_services/:id', async (req, res) => {
     const { remaining_sessions } = req.body || {};
     if (remaining_sessions === undefined) return res.status(400).json({ error: 'remaining_sessions requerido.' });
     const n = parseInt(remaining_sessions, 10);
-    await tenantPool.queryTenant(req.tenant.dbName, 'UPDATE patient_services SET remaining_sessions = ? WHERE id = ?', [n, id]);
-    const [row] = await tenantPool.queryTenant(req.tenant.dbName,
+    await tenantPool.queryTenant(req.tenant.instanceId, 'UPDATE patient_services SET remaining_sessions = ? WHERE id = ?', [n, id]);
+    const [row] = await tenantPool.queryTenant(req.tenant.instanceId,
       'SELECT ps.id, ps.patient_id, ps.service_id, ps.remaining_sessions, ps.created_at, s.name AS service_name FROM patient_services ps JOIN services s ON s.id = ps.service_id WHERE ps.id = ?', [id]);
     if (!row) return res.status(404).json({ error: 'Bono no encontrado.' });
     return res.json(row);
@@ -598,7 +598,7 @@ router.delete('/patient_services/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (!id) return res.status(400).json({ error: 'ID invalido.' });
-    const r = await tenantPool.queryTenant(req.tenant.dbName, 'DELETE FROM patient_services WHERE id = ?', [id]);
+    const r = await tenantPool.queryTenant(req.tenant.instanceId, 'DELETE FROM patient_services WHERE id = ?', [id]);
     if (r.affectedRows === 0) return res.status(404).json({ error: 'Bono no encontrado.' });
     return res.status(204).send();
   } catch (err) {
@@ -614,10 +614,10 @@ router.get('/medical_treatments', async (req, res) => {
     const params = [];
     if (patientId) { sql += ' WHERE patient_id = ?'; params.push(patientId); }
     sql += ' ORDER BY created_at DESC';
-    const rows = await tenantPool.queryTenant(req.tenant.dbName, sql, params);
+    const rows = await tenantPool.queryTenant(req.tenant.instanceId, sql, params);
     return res.json(rows);
   } catch (err) {
-    if (err.code === 'ER_NO_SUCH_TABLE') return res.json([]);
+    if (err.code === '42P01') return res.json([]);
     return res.status(500).json({ error: 'Error al listar tratamientos.' });
   }
 });
@@ -626,11 +626,11 @@ router.get('/medical_treatments/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (!id) return res.status(400).json({ error: 'ID invalido.' });
-    const [row] = await tenantPool.queryTenant(req.tenant.dbName, 'SELECT id, patient_id, title, description, status, start_date, end_date, evolution_notes, created_at FROM medical_treatments WHERE id = ?', [id]);
+    const [row] = await tenantPool.queryTenant(req.tenant.instanceId, 'SELECT id, patient_id, title, description, status, start_date, end_date, evolution_notes, created_at FROM medical_treatments WHERE id = ?', [id]);
     if (!row) return res.status(404).json({ error: 'Tratamiento no encontrado.' });
     return res.json(row);
   } catch (err) {
-    if (err.code === 'ER_NO_SUCH_TABLE') return res.status(501).json({ error: 'Tratamientos no disponibles.' });
+    if (err.code === '42P01') return res.status(501).json({ error: 'Tratamientos no disponibles.' });
     return res.status(500).json({ error: 'Error al obtener tratamiento.' });
   }
 });
@@ -639,13 +639,13 @@ router.post('/medical_treatments', async (req, res) => {
   try {
     const { patient_id, title, description, status, start_date, end_date } = req.body || {};
     if (!patient_id || !title || !String(title).trim()) return res.status(400).json({ error: 'Paciente y título requeridos.' });
-    const [result] = await tenantPool.queryTenant(req.tenant.dbName,
+    const [result] = await tenantPool.queryTenant(req.tenant.instanceId,
       'INSERT INTO medical_treatments (patient_id, title, description, status, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?)',
       [parseInt(patient_id, 10), String(title).trim(), description || null, (status && String(status).trim()) || 'active', start_date || null, end_date || null]);
-    const [row] = await tenantPool.queryTenant(req.tenant.dbName, 'SELECT id, patient_id, title, description, status, start_date, end_date, evolution_notes, created_at FROM medical_treatments WHERE id = ?', [result.insertId]);
+    const [row] = await tenantPool.queryTenant(req.tenant.instanceId, 'SELECT id, patient_id, title, description, status, start_date, end_date, evolution_notes, created_at FROM medical_treatments WHERE id = ?', [result.insertId]);
     return res.status(201).json(row);
   } catch (err) {
-    if (err.code === 'ER_NO_SUCH_TABLE') return res.status(501).json({ error: 'Tratamientos no disponibles.' });
+    if (err.code === '42P01') return res.status(501).json({ error: 'Tratamientos no disponibles.' });
     return res.status(500).json({ error: 'Error al crear tratamiento.' });
   }
 });
@@ -665,12 +665,12 @@ router.put('/medical_treatments/:id', async (req, res) => {
     if (evolution_notes !== undefined) { updates.push('evolution_notes = ?'); values.push(evolution_notes); }
     if (updates.length === 0) return res.status(400).json({ error: 'Nada que actualizar.' });
     values.push(id);
-    await tenantPool.queryTenant(req.tenant.dbName, `UPDATE medical_treatments SET ${updates.join(', ')} WHERE id = ?`, values);
-    const [row] = await tenantPool.queryTenant(req.tenant.dbName, 'SELECT id, patient_id, title, description, status, start_date, end_date, evolution_notes, created_at FROM medical_treatments WHERE id = ?', [id]);
+    await tenantPool.queryTenant(req.tenant.instanceId, `UPDATE medical_treatments SET ${updates.join(', ')} WHERE id = ?`, values);
+    const [row] = await tenantPool.queryTenant(req.tenant.instanceId, 'SELECT id, patient_id, title, description, status, start_date, end_date, evolution_notes, created_at FROM medical_treatments WHERE id = ?', [id]);
     if (!row) return res.status(404).json({ error: 'Tratamiento no encontrado.' });
     return res.json(row);
   } catch (err) {
-    if (err.code === 'ER_NO_SUCH_TABLE') return res.status(501).json({ error: 'Tratamientos no disponibles.' });
+    if (err.code === '42P01') return res.status(501).json({ error: 'Tratamientos no disponibles.' });
     return res.status(500).json({ error: 'Error al actualizar tratamiento.' });
   }
 });
@@ -679,11 +679,11 @@ router.delete('/medical_treatments/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (!id) return res.status(400).json({ error: 'ID invalido.' });
-    const r = await tenantPool.queryTenant(req.tenant.dbName, 'DELETE FROM medical_treatments WHERE id = ?', [id]);
+    const r = await tenantPool.queryTenant(req.tenant.instanceId, 'DELETE FROM medical_treatments WHERE id = ?', [id]);
     if (r.affectedRows === 0) return res.status(404).json({ error: 'Tratamiento no encontrado.' });
     return res.status(204).send();
   } catch (err) {
-    if (err.code === 'ER_NO_SUCH_TABLE') return res.status(501).json({ error: 'Tratamientos no disponibles.' });
+    if (err.code === '42P01') return res.status(501).json({ error: 'Tratamientos no disponibles.' });
     return res.status(500).json({ error: 'Error al eliminar tratamiento.' });
   }
 });
@@ -693,10 +693,10 @@ router.get('/medical_documents', async (req, res) => {
   try {
     const patientId = req.query.patient_id ? parseInt(req.query.patient_id, 10) : null;
     if (!patientId) return res.status(400).json({ error: 'patient_id requerido.' });
-    const rows = await tenantPool.queryTenant(req.tenant.dbName, 'SELECT id, patient_id, name, description, file_path, document_type, created_at FROM medical_documents WHERE patient_id = ? ORDER BY created_at DESC', [patientId]);
+    const rows = await tenantPool.queryTenant(req.tenant.instanceId, 'SELECT id, patient_id, name, description, file_path, document_type, created_at FROM medical_documents WHERE patient_id = ? ORDER BY created_at DESC', [patientId]);
     return res.json(rows);
   } catch (err) {
-    if (err.code === 'ER_NO_SUCH_TABLE') return res.json([]);
+    if (err.code === '42P01') return res.json([]);
     return res.status(500).json({ error: 'Error al listar documentos.' });
   }
 });
@@ -710,13 +710,13 @@ router.post('/medical_documents/upload', uploadDocument.single('file'), async (r
     const relativePath = path.join('patients', String(patientId), req.file.filename).replace(/\\/g, '/');
     const description = (req.body && req.body.description) ? String(req.body.description).trim() : null;
     const documentType = (req.body && req.body.document_type) ? String(req.body.document_type).trim() : 'other';
-    const [result] = await tenantPool.queryTenant(req.tenant.dbName,
+    const [result] = await tenantPool.queryTenant(req.tenant.instanceId,
       'INSERT INTO medical_documents (patient_id, name, description, file_path, document_type) VALUES (?, ?, ?, ?, ?)',
       [patientId, name, description, relativePath, documentType]);
-    const [row] = await tenantPool.queryTenant(req.tenant.dbName, 'SELECT id, patient_id, name, description, file_path, document_type, created_at FROM medical_documents WHERE id = ?', [result.insertId]);
+    const [row] = await tenantPool.queryTenant(req.tenant.instanceId, 'SELECT id, patient_id, name, description, file_path, document_type, created_at FROM medical_documents WHERE id = ?', [result.insertId]);
     return res.status(201).json(row);
   } catch (err) {
-    if (err.code === 'ER_NO_SUCH_TABLE') return res.status(501).json({ error: 'Documentos no disponibles.' });
+    if (err.code === '42P01') return res.status(501).json({ error: 'Documentos no disponibles.' });
     console.error('Upload document error:', err);
     return res.status(500).json({ error: 'Error al subir el documento.' });
   }
@@ -726,13 +726,13 @@ router.post('/medical_documents', async (req, res) => {
   try {
     const { patient_id, name, description, document_type } = req.body || {};
     if (!patient_id || !name || !String(name).trim()) return res.status(400).json({ error: 'Paciente y nombre requeridos.' });
-    const [result] = await tenantPool.queryTenant(req.tenant.dbName,
+    const [result] = await tenantPool.queryTenant(req.tenant.instanceId,
       'INSERT INTO medical_documents (patient_id, name, description, document_type) VALUES (?, ?, ?, ?)',
       [parseInt(patient_id, 10), String(name).trim(), description || null, (document_type && String(document_type).trim()) || 'other']);
-    const [row] = await tenantPool.queryTenant(req.tenant.dbName, 'SELECT id, patient_id, name, description, file_path, document_type, created_at FROM medical_documents WHERE id = ?', [result.insertId]);
+    const [row] = await tenantPool.queryTenant(req.tenant.instanceId, 'SELECT id, patient_id, name, description, file_path, document_type, created_at FROM medical_documents WHERE id = ?', [result.insertId]);
     return res.status(201).json(row);
   } catch (err) {
-    if (err.code === 'ER_NO_SUCH_TABLE') return res.status(501).json({ error: 'Documentos no disponibles.' });
+    if (err.code === '42P01') return res.status(501).json({ error: 'Documentos no disponibles.' });
     return res.status(500).json({ error: 'Error al crear documento.' });
   }
 });
@@ -741,11 +741,11 @@ router.delete('/medical_documents/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (!id) return res.status(400).json({ error: 'ID invalido.' });
-    const r = await tenantPool.queryTenant(req.tenant.dbName, 'DELETE FROM medical_documents WHERE id = ?', [id]);
+    const r = await tenantPool.queryTenant(req.tenant.instanceId, 'DELETE FROM medical_documents WHERE id = ?', [id]);
     if (r.affectedRows === 0) return res.status(404).json({ error: 'Documento no encontrado.' });
     return res.status(204).send();
   } catch (err) {
-    if (err.code === 'ER_NO_SUCH_TABLE') return res.status(501).json({ error: 'Documentos no disponibles.' });
+    if (err.code === '42P01') return res.status(501).json({ error: 'Documentos no disponibles.' });
     return res.status(500).json({ error: 'Error al eliminar documento.' });
   }
 });

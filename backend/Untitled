@@ -1,1 +1,0 @@
-cd nuevaApp/backend && node migrations/run-migrations.js instance citas_demo_medico

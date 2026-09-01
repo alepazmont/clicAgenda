@@ -1,11 +1,27 @@
+# Dependencies
 node_modules/
-backend/node_modules/
-frontend/node_modules/
+**/node_modules/
+
+# Secrets
 .env
+.env.*
+!.env.example
+!env.example
+!env.docker.example
 backend/.env
-.env.local
-*.log
-backend/uploads/
+frontend/.env.local
+
+# Build / deploy
 frontend/dist/
-.vercel
+.vercel/
+
+# Runtime / uploads
+backend/uploads/
+*.log
+npm-debug.log*
+
+# OS / editor
 .DS_Store
+.idea/
+.vscode/
+*.swp

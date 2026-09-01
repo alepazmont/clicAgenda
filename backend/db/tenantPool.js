@@ -15,6 +15,8 @@ async function withTenantContext(instanceId, fn) {
   const client = await pg.getPool().connect();
   try {
     await client.query('BEGIN');
+    // neondb_owner tiene BYPASSRLS; el rol app aplica las políticas RLS.
+    await client.query('SET LOCAL ROLE clicagenda_app');
     await client.query(`SELECT set_config('app.instance_id', $1, true)`, [String(instanceId)]);
     const result = await fn(client);
     await client.query('COMMIT');

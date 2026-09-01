@@ -4,8 +4,14 @@ const fs = require('fs');
 const cors = require('cors');
 const config = require('./config');
 
-const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+const uploadsDir = process.env.VERCEL
+  ? path.join('/tmp', 'clicagenda-uploads')
+  : path.join(__dirname, 'uploads');
+try {
+  if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+} catch (_) {
+  // En serverless el FS puede ser de solo lectura fuera de /tmp.
+}
 
 const panelAuth = require('./routes/panel/auth');
 const panelInstances = require('./routes/panel/instances');

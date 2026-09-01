@@ -15,7 +15,6 @@ module.exports = {
   },
 
   panelUrl: process.env.PANEL_URL || process.env.FRONTEND_URL || 'http://localhost:5174',
-  frontendUrl: process.env.FRONTEND_URL || process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : 'http://localhost:5174',
+  frontendUrl: process.env.FRONTEND_URL
+    || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:5174'),
 };

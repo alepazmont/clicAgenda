@@ -2,6 +2,8 @@
 
 SaaS multi-clínica de gestión de citas. Demo de portfolio con **PostgreSQL (Neon)** y despliegue en **Vercel**.
 
+**Demo en vivo:** https://clicagenda.vercel.app
+
 ## Demo incluida
 
 | Slug | Especialidad |

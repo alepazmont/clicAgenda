@@ -1,11 +1,15 @@
 /**
- * En subdominio (ej. demo_medico.localhost) la app es solo de la instancia: rutas sin /app.
- * En localhost la app es el panel y la instancia va bajo /app.
+ * Host de instancia = subdominio de clínica (ej. demo_dental.ejemplo.com).
+ * En localhost y en el deploy único de Vercel la app es el panel; la instancia va bajo /app.
  */
 function getIsInstanceHost() {
   if (typeof window === 'undefined') return false;
   const h = window.location.hostname;
-  return h !== 'localhost' && h !== '127.0.0.1';
+  if (h === 'localhost' || h === '127.0.0.1') return false;
+  // Demo / portfolio: un solo dominio (panel + /app)
+  if (h === 'clicagenda.vercel.app' || h.endsWith('.vercel.app')) return false;
+  // Subdominio de tenant: al menos 3 etiquetas (a.b.c)
+  return h.split('.').length >= 3;
 }
 
 export function isInstanceHost() {
